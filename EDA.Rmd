@@ -1,0 +1,406 @@
+---
+title: "Br 8325 basic analysis"
+author: "Sowmya"
+date: "8/26/2021"
+output: html_document
+---
+
+
+
+```{r setup, echo=FALSE, include = FALSE, message=FALSE}
+library("here")
+library("sessioninfo")
+library("pryr")
+
+## reading the data
+library("SpatialExperiment")
+
+## vis
+library("spatialLIBD")
+
+## analysis ## requires uwot for UMAP
+library("scater")
+library("BiocParallel")
+library('ggspavis')
+
+```
+
+
+### build spe
+```{r build spe, echo=FALSE}
+
+dir <- 'C:/Users/Sowmya/Desktop/dlpfc image/OUTS'
+
+samples <- file.path(dir)
+sample_ids = 'Br8325_mid_manual_allignment_all'
+
+spe <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+```
+
+### add counts data
+```{r add counts data, echo = FALSE}
+
+counts = read.csv('C:/Users/Sowmya/Desktop/dlpfc image/OUTS/spatial/tissue_spot_counts.csv')
+colData(spe)$cell_counts = counts$cell_counts
+colData(spe)$image_row  = counts$imagerow
+colData(spe)$image_col  = counts$imagecol
+  
+
+```
+
+### plot spots
+```{r plot spots}
+
+plotSpots(spe,
+  x_coord = "pxl_row_in_fullres",
+  y_coord = "pxl_col_in_fullres")
+
+```
+
+## Quality Control
+
+Low-quality spots can be identified according to several characteristics, including:
+
+1. library size (i.e. total UMI counts per spot)
+
+2. number of expressed features (i.e. number of genes with non-zero UMI counts per spot)
+
+3. proportion of reads mapping to mitochondrial genes (a high proportion indicates cell damage)
+
+4. number of cells per spot (unusually high values can indicate problems)
+
+
+### keep only spots over tissue
+```{r keep only spots over tissue, echo=FALSE}
+
+spe <- spe[, spatialData(spe)$in_tissue == 1]
+dim(spe)
+
+
+```
+
+### identify mitochondrial genes
+```{r identify mitochondrial genes, echo=FALSE}
+
+is_mito <- grepl("(^MT-)|(^mt-)", rowData(spe)$symbol)
+table(is_mito)
+
+
+```
+
+###  list MT genes
+``` {r list MT genes, echo = FALSE}
+rowData(spe)$symbol[is_mito]
+```
+### Calculate per-spot QC metrics and store in colData
+```{r Calculate per-spot QC metrics and store in colData, echo = FALSE}
+
+spe <- addPerCellQC(spe, subsets = list(mito = is_mito))
+```
+
+### library size histogram
+```{r library size histogram, echo = FALSE}
+
+hist(colData(spe)$sum, breaks = 40)
+
+```
+Spike at low library size?  
+
+### plot cell counts
+``` {r plot cell counts, echo = FALSE}
+
+plotQC(spe, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "sum", 
+       threshold_y = 500)
+
+```
+
+### spatial pattern of discarded spots for high threshold
+``` {r spatial pattern of discarded spots for high threshold}
+qc_lib_size_2000 <- colData(spe)$sum < 2000
+colData(spe)$qc_lib_size_2000 <- qc_lib_size_2000
+
+plotQC(spe, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_lib_size_2000")
+```
+
+
+``
+
+###expressed genes
+```{r expressed genes }
+#histogram of numbers of expressed genes
+hist(colData(spe)$detected, breaks = 20)
+```
+
+### num expressed genes vs. num cells per spot
+```{r num expressed genes vs. num cells per spot}
+
+plotQC(spe, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected", 
+       threshold_y = 250)
+
+```
+
+### threshold for expressed genes
+```{r threshold for expressed genes}
+
+qc_detected <- colData(spe)$detected < 250
+
+colData(spe)$qc_detected <- qc_detected
+
+plotQC(spe, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_detected")
+
+```
+
+### check spatial pattern for high threshold
+```{r check spatial pattern for high threshold}
+
+qc_detected_1000 <- colData(spe)$detected < 1000
+colData(spe)$qc_detected_1000 <- qc_detected_1000
+plotQC(spe, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_detected_1000")
+
+
+```
+
+## proportion of mitochondrial reads 
+
+``` {r mito histogram}
+
+hist(colData(spe)$subsets_mito_percent, breaks = 20)
+
+```
+
+### mito proportion vs. num cells per spot
+``` {r mito proportion vs. num cells per spot}
+
+plotQC(spe, type = "scatter",
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       metric_x = "cell_counts", metric_y = "subsets_mito_percent", 
+       threshold_y = 30)
+
+```
+
+### mito thresholding @ 30
+```{r mito thresholding @ 30}
+
+qc_mito <- colData(spe)$subsets_mito_percent > 30
+table(qc_mito)
+colData(spe)$qc_mito <- qc_mito
+
+plotQC(spe, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_mito")
+
+```
+
+### cell counts histogram
+```{r cell counts histogram}
+
+hist(colData(spe)$cell_counts, breaks = 20)
+
+```
+
+
+### r distribution of cells per spot
+```{r distribution of cells per spot}
+tbl_cells_per_spot <- table(colData(spe)$cell_count)
+```
+
+### num expressed genes vs. thresholded num cells
+```{r num expressed genes vs. thresholded num cells}
+plotQC(spe, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected", 
+       threshold_x = 12)
+
+
+```
+
+From 9.5.4: 
+
+spots with very high cell counts also have low numbers of expressed genes. This indicates that the experiments have failed for these spots, and they should be removed.
+
+Is 12 still a good threshold? 
+
+### selected QC threshold for number of cells per spot
+```{r selected QC threshold for number of cells per spot }
+
+qc_cell_count <- colData(spe)$cell_counts > 12
+table(qc_cell_count)
+
+colData(spe)$qc_cell_count <- qc_cell_count
+
+# check spatial pattern of discarded spots
+plotQC(spe, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_cell_count")
+```
+
+
+Number of cells correlated with wrinkles. But is the other part of the tissue damaged? High mito count? 
+
+Should I be discarding anything at all? 
+
+## Normalization Chapter 10 
+
+Cluster similar cells based on their expression profiles, using either log-expression values or ranks.
+```{r quick clustering }
+library(scran)
+set.seed(123)
+qclus <- quickCluster(spe)
+table(qclus)
+
+```
+
+### store size factors in objects
+```{r store size factors in objects}
+
+# calculate size factors and store in object
+spe <- computeSumFactors(spe, cluster = qclus)
+
+summary(sizeFactors(spe))
+
+```
+
+### size factor hist 
+```{r size factor hist }
+hist(sizeFactors(spe), breaks = 20)
+```
+
+
+### calculate logcounts (log-transformed normalized counts)
+```{r calculate logcounts (log-transformed normalized counts)}
+
+spe <- logNormCounts(spe)
+
+# check
+assayNames(spe)
+```
+
+## Feature selection and Dimensionality reduction 
+
+```{r feature selection}
+
+library(scran)
+# remove mitochondrial genes
+spe <- spe[!is_mito, ]
+# fit mean-variance relationship
+dec <- modelGeneVar(spe)
+# select top HVGs
+top_hvgs <- getTopHVGs(dec, prop = 0.1)
+
+# visualize mean-variance relationship
+fit <- metadata(dec)
+plot(fit$mean, fit$var, 
+     xlab = "mean of log-expression", ylab = "variance of log-expression")
+curve(fit$trend(x), col = "dodgerblue", add = TRUE, lwd = 2)
+
+```
+Apply principal component analysis (PCA) to the set of top highly variable genes (HVGs) to reduce the dimensionality of the dataset, and retain the top 50 principal components (PCs) for further downstream analyses.
+
+### compute PCA
+```{r compute PCA}
+
+set.seed(123)
+spe <- runPCA(spe, subset_row = top_hvgs)
+
+reducedDimNames(spe)
+dim(reducedDim(spe, "PCA"))
+```
+
+### UMAP
+```{r UMAP}
+library(uwot)
+set.seed(123)
+spe <- runUMAP(spe, dimred = "PCA")
+
+reducedDimNames(spe)
+dim(reducedDim(spe, "UMAP"))
+colnames(reducedDim(spe, "UMAP")) <- paste0("UMAP", 1:2)
+
+```
+
+```{r plot top 2 PCA dimensions}
+plotDimRed(spe, type = "PCA")
+```
+
+```{r plot top 2 UMAP dimensions}
+plotDimRed(spe, type = "UMAP")
+```
+
+##Clustering 
+```{r graph based clustering}
+# graph-based clustering
+set.seed(123)
+k <- 10
+g <- buildSNNGraph(spe, k = k, use.dimred = "PCA")
+g_walk <- igraph::cluster_walktrap(g)
+clus <- g_walk$membership
+table(clus)
+
+# store cluster labels in column 'label' in colData
+colLabels(spe) <- factor(clus)
+
+plotSpots(spe, annotate = "label",
+          x_coord = "pxl_row_in_fullres",
+          y_coord = "pxl_col_in_fullres",
+          palette = "libd_layer_colors")
+
+
+```
+```{r plot labeled PCA}
+# plot clusters in PCA reduced dimensions
+plotDimRed(spe, type = "PCA", 
+           annotate = "label", palette = "libd_layer_colors")
+```
+```{r plot labeled UMAP}
+# plot clusters in PCA reduced dimensions
+plotDimRed(spe, type = "UMAP", 
+           annotate = "label", palette = "libd_layer_colors")
+```
+
+## Identifying Marker Genes 
+
+```{r gene per cluster}
+# set gene names as row names for easier plotting
+rownames(spe) <- rowData(spe)$symbols
+
+# test for marker genes
+markers <- findMarkers(spe, test = "binom", direction = "up")
+
+# returns a list with one DataFrame per cluster
+markers
+
+```
+
+
+```{r log-fold changes for clusters}
+# plot log-fold changes for one cluster over all other clusters
+# selecting cluster 1
+
+library(pheatmap)
+interesting <- markers[[1]]
+best_set <- interesting[interesting$Top <= 5, ]
+logFCs <- getMarkerEffects(best_set)
+
+pheatmap(logFCs, breaks = seq(-5, 5, length.out = 101))
+
+```
+
+
