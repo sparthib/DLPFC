@@ -1,0 +1,331 @@
+---
+title: "6471_mid_EDA"
+author: "Sowmya"
+date: "9/11/2021"
+output: html_document
+---
+
+
+
+```{r setup, echo=FALSE, include = FALSE, message=FALSE}
+library("here")
+library("sessioninfo")
+library("pryr")
+## reading the data
+library("SpatialExperiment")
+## vis
+library("spatialLIBD")
+## analysis ## requires uwot for UMAP
+library("scater")
+library("BiocParallel")
+library('ggspavis')
+```
+
+### build spe
+```{r build spe, echo=FALSE}
+dir <- 'D:/DLPFC images/6471 mid'
+samples <- file.path(dir)
+sample_ids = 'Br6471_mid_manual_allignment_all'
+spe_6471_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+```
+
+
+```{r convert colData to df, echo = FALSE, message = FALSE, results='hide'}
+counts_6471_mid = read.csv('D:/DLPFC images/6471 mid/spatial/tissue_spot_counts.csv')
+colData_6471_mid = read.csv('D:/DLPFC images/6471 mid/colData6471mid.csv')
+
+```
+
+
+```{r  joining two data sets, echo = FALSE, message = FALSE, results='hide'}
+merge(counts_6471_mid, colData_6471_mid, by = "barcode")
+```
+
+```{r counts data, message = FALSE, results='hide'}
+
+colData(spe_6471_mid)$cell_counts = counts_6471_mid$count
+colData(spe_6471_mid)$image_row  = counts_6471_mid$imagerow
+colData(spe_6471_mid)$image_col  = counts_6471_mid$imagecol
+```
+
+
+
+
+### plot spots
+```{r plot spots}
+plotSpots(spe_6471_mid,
+  x_coord = "pxl_row_in_fullres",
+  y_coord = "pxl_col_in_fullres")
+```
+```{r keep only spots over tissue}
+spe_6471_mid <- spe_6471_mid[, spatialData(spe_6471_mid)$in_tissue == 1]
+dim(spe_6471_mid)
+```
+
+### identify mitochondrial genes
+```{r identify mitochondrial genes, echo=FALSE}
+is_mito <- grepl("(^MT-)|(^mt-)", rowData(spe_6471_mid)$symbol)
+table(is_mito)
+```
+###  list MT genes
+``` {r list MT genes, echo = FALSE}
+rowData(spe_6471_mid)$symbol[is_mito]
+```
+### Calculate per-spot QC metrics and store in colData
+```{r Calculate per-spot QC metrics and store in colData, echo = FALSE}
+spe_6471_mid <- addPerCellQC(spe_6471_mid, subsets = list(mito = is_mito))
+```
+
+### library size histogram
+```{r library size histogram, echo = FALSE}
+hist(colData(spe_6471_mid)$sum, breaks = 40)
+```
+Spike at low library size?  
+
+### plot cell counts
+``` {r plot cell counts, echo = FALSE}
+plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "sum", 
+       threshold_y = 500)
+```
+###spatial pattern of discarded spots for high threshold
+``` {r spatial pattern of discarded spots for high threshold}
+qc_lib_size_2000 <- colData(spe_6471_mid)$sum < 2000
+colData(spe_6471_mid)$qc_lib_size_2000 <- qc_lib_size_2000
+plotQC(spe_6471_mid, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_lib_size_2000")
+```
+### spatial pattern of discarded spots for low threshold 
+
+```{r spatial pattern of disc spots for low threshold}
+qc_lib_size_500 <- colData(spe_6471_mid)$sum < 500
+colData(spe_6471_mid)$qc_lib_size_500 <- qc_lib_size_500
+plotQC(spe_6471_mid, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_lib_size_500")
+```
+###expressed genes
+```{r expressed genes }
+#histogram of numbers of expressed genes
+hist(colData(spe_6471_mid)$detected, breaks = 20)
+```
+### num expressed genes vs. num cells per spot
+```{r num expressed genes vs. num cells per spot}
+plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected", 
+       threshold_y = 250)
+```
+
+### threshold for expressed genes
+```{r threshold for expressed genes}
+qc_detected <- colData(spe_6471_mid)$detected < 250
+colData(spe_6471_mid)$qc_detected <- qc_detected
+plotQC(spe_6471_mid, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_detected")
+```
+
+### check spatial pattern for high threshold
+```{r check spatial pattern for high threshold}
+qc_detected_1000 <- colData(spe_6471_mid)$detected < 1000
+colData(spe_6471_mid)$qc_detected_1000 <- qc_detected_1000
+plotQC(spe_6471_mid, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_detected_1000")
+```
+
+## proportion of mitochondrial reads 
+
+``` {r mito histogram}
+hist(colData(spe_6471_mid)$subsets_mito_percent, breaks = 20)
+```
+
+### mito proportion vs. num cells per spot
+``` {r mito proportion vs. num cells per spot}
+plotQC(spe_6471_mid, type = "scatter",
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       metric_x = "cell_counts", metric_y = "subsets_mito_percent", 
+       threshold_y = 30)
+```
+### mito thresholding @ 30
+```{r mito thresholding @ 30}
+qc_mito <- colData(spe_6471_mid)$subsets_mito_percent > 30
+table(qc_mito)
+colData(spe_6471_mid)$qc_mito <- qc_mito
+plotQC(spe_6471_mid, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_mito")
+```
+### cell counts histogram
+```{r cell counts histogram}
+hist(colData(spe_6471_mid)$cell_counts, breaks = 20)
+```
+
+### r distribution of cells per spot
+```{r distribution of cells per spot}
+tbl_cells_per_spot <- table(colData(spe_6471_mid)$cell_count)
+```
+
+### num expressed genes vs. thresholded num cells
+```{r num expressed genes vs. thresholded num cells}
+plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected", 
+       threshold_x = 12)
+```
+### selected QC threshold for number of cells per spot
+```{r selected QC threshold for number of cells per spot }
+qc_cell_count <- colData(spe_6471_mid)$cell_counts > 12
+table(qc_cell_count)
+colData(spe_6471_mid)$qc_cell_count <- qc_cell_count
+# check spatial pattern of discarded spots
+plotQC(spe_6471_mid, type = "spots", 
+       x_coord = "pxl_row_in_fullres",
+       y_coord = "pxl_col_in_fullres",
+       discard = "qc_cell_count")
+```
+## Normalization Chapter 10 
+
+Cluster similar cells based on their expression profiles, using either log-expression values or ranks.
+```{r quick clustering }
+library(scran)
+set.seed(123)
+qclus <- quickCluster(spe_6471_mid)
+table(qclus)
+```
+
+### store size factors in objects
+```{r store size factors in objects}
+# calculate size factors and store in object
+spe_6471_mid <- computeSumFactors(spe_6471_mid, cluster = qclus)
+summary(sizeFactors(spe_6471_mid))
+```
+
+### size factor hist 
+```{r size factor hist }
+hist(sizeFactors(spe_6471_mid), breaks = 20)
+```
+
+
+### calculate logcounts (log-transformed normalized counts)
+```{r calculate logcounts (log-transformed normalized counts)}
+spe_6471_mid <- logNormCounts(spe_6471_mid)
+# check
+assayNames(spe_6471_mid)
+```
+## Feature selection and Dimensionality reduction 
+
+```{r feature selection}
+library(scran)
+# remove mitochondrial genes
+spe_6471_mid <- spe_6471_mid[!is_mito, ]
+# fit mean-variance relationship
+dec <- modelGeneVar(spe_6471_mid)
+# select top HVGs
+top_hvgs <- getTopHVGs(dec, prop = 0.1)
+# visualize mean-variance relationship
+fit <- metadata(dec)
+plot(fit$mean, fit$var, 
+     xlab = "mean of log-expression", ylab = "variance of log-expression",
+    main = '6471 mid')
+curve(fit$trend(x), col = "dodgerblue", add = TRUE, lwd = 2)
+```
+
+Apply principal component analysis (PCA) to the set of top highly variable genes (HVGs) to reduce the dimensionality of the dataset, and retain the top 50 principal components (PCs) for further downstream analyses.
+
+### compute PCA
+```{r compute PCA}
+set.seed(123)
+spe_6471_mid <- runPCA(spe_6471_mid, subset_row = top_hvgs)
+reducedDimNames(spe_6471_mid)
+dim(reducedDim(spe_6471_mid, "PCA"))
+```
+### UMAP
+```{r UMAP}
+library(uwot)
+set.seed(123)
+
+spe_6471_mid<- runUMAP(spe_6471_mid, dimred = "PCA")
+reducedDimNames(spe_6471_mid)
+dim(reducedDim(spe_6471_mid, "UMAP"))
+colnames(reducedDim(spe_6471_mid, "UMAP")) <- paste0("UMAP", 1:2)
+```
+
+```{r plot top 2 PCA dimensions}
+plotDimRed(spe_6471_mid, type = "PCA")
+```
+```{r plot top 2 UMAP dimensions}
+plotDimRed(spe_6471_mid, type = "UMAP")
+```
+
+##Clustering 
+```{r graph based clustering}
+# graph-based clustering
+set.seed(123)
+k <- 10
+g <- buildSNNGraph(spe_6471_mid, k = k, use.dimred = "PCA")
+g_walk <- igraph::cluster_walktrap(g)
+clus <- g_walk$membership
+table(clus)
+
+# store cluster labels in column 'label' in colData
+colLabels(spe_6471_mid) <- factor(clus)
+```
+
+```{r plot labels}
+plotSpots(spe_6471_mid, annotate = 'label',
+          x_coord = 'pxl_row_in_fullres',
+          y_coord = 'pxl_col_in_fullres',
+          palette = 'libd_layer_colors')
+#
+```
+
+```{r plot labeled PCA}
+# plot clusters in PCA reduced dimensions
+plotDimRed(spe_6471_mid, type = "PCA", 
+           annotate = "label", palette = "libd_layer_colors")
+```
+
+```{r plot labeled UMAP}
+# plot clusters in UMAP reduced dimensions
+plotDimRed(spe_6471_mid, type = "UMAP", 
+           annotate = "label", palette = "libd_layer_colors")
+```
+
+## Identifying Marker Genes 
+
+```{r gene per cluster}
+# set gene names as row names for easier plotting
+rownames(spe_6471_mid) <- rowData(spe_6471_mid)$symbols
+# test for marker genes
+markers <- findMarkers(spe_6471_mid, test = "binom", direction = "up")
+# returns a list with one DataFrame per cluster
+markers
+```
+
+```{r log-fold changes for clusters}
+# plot log-fold changes for one cluster over all other clusters
+# selecting cluster 1
+library(pheatmap)
+interesting <- markers[[1]]
+best_set <- interesting[interesting$Top <= 5, ]
+logFCs <- getMarkerEffects(best_set)
+pheatmap(logFCs, breaks = seq(-5, 5, length.out = 101))
+```
+
+
+``` {r plot mito vs sum, echo = FALSE}
+plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "detected", metric_y = "subsets_mito_percent")
+```
