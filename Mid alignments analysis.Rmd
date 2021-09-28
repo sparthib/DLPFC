@@ -1,0 +1,443 @@
+---
+title: "Mid alignments"
+author: "Sowmya"
+date: "9/25/2021"
+output: html_document
+---
+
+
+
+```{r setup, echo=FALSE, include = FALSE, message=FALSE}
+library("here")
+library("sessioninfo")
+library("pryr")
+## reading the data
+library("SpatialExperiment")
+## vis
+library("spatialLIBD")
+## analysis ## requires uwot for UMAP
+library("scater")
+library("BiocParallel")
+library('ggspavis')
+library('cowplot')
+library('gridExtra')
+library('tidyverse')
+library(scran)
+```
+
+```{r build spe, echo=FALSE ,message= FALSE}
+dir6471 <- 'D:/DLPFC images/6471 mid'
+samples <- file.path(dir6471)
+sample_ids = 'Br6471_mid_manual_allignment_all'
+spe_6471_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+
+
+dir6522 <- 'D:/DLPFC images/6522 mid'
+samples <- file.path(dir6522)
+sample_ids = 'Br6522_mid_manual_allignment_all'
+spe_6522_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+
+dir8325 <- 'D:/DLPFC images/8325 mid/OUTS'
+samples <- file.path(dir8325)
+sample_ids = 'Br8325_mid_manual_allignment_all'
+spe_8325_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+
+dir8667 <- 'D:/DLPFC images/8667 mid'
+samples <- file.path(dir8667)
+sample_ids = 'Br8867s_mid_manual_allignment_all'
+spe_8667_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+
+
+```
+
+```{r add 6471 spot info, echo = FALSE, message = FALSE, results='hide'}
+counts_6471_mid = read.csv('D:/DLPFC images/6471 mid/spatial/tissue_spot_counts.csv')
+
+#colData_6471_mid = read.csv('D:/DLPFC images/6471 mid/colData6471mid.csv')
+
+#merge(counts_6471_mid, colData_6471_mid, by = "barcode")
+
+colData(spe_6471_mid)$cell_counts = counts_6471_mid$count
+colData(spe_6471_mid)$image_row  = counts_6471_mid$imagerow
+colData(spe_6471_mid)$image_col  = counts_6471_mid$imagecol
+
+```
+
+```{r 6522 add spot info, echo = FALSE, message = FALSE, results='hide'}
+counts_6522_mid = read.csv('D:/DLPFC images/6522 mid/spatial/tissue_spot_counts.csv')
+colData(spe_6522_mid)$cell_counts = counts_6522_mid$count
+colData(spe_6522_mid)$image_row  = counts_6522_mid$imagerow
+colData(spe_6522_mid)$image_col  = counts_6522_mid$imagecol
+```
+
+```{r 8325 add spot info, echo = FALSE, message= FALSE, results= 'hide'}
+counts_8325_mid = read.csv('D:/DLPFC images/8325 mid/OUTS/spatial/tissue_spot_counts.csv')
+
+colData(spe_8325_mid)$cell_counts = counts_8325_mid$cell_counts
+colData(spe_8325_mid)$image_row  = counts_8325_mid$imagerow
+colData(spe_8325_mid)$image_col  = counts_8325_mid$imagecol
+```
+
+```{r 8667 add spot info, echo = FALSE, message= FALSE, results= 'hide'}
+
+counts_8667_mid = read.csv('D:/DLPFC images/8667 mid/spatial/tissue_spot_counts.csv')
+colData(spe_8667_mid)$cell_counts = counts_8667_mid$count
+colData(spe_8667_mid)$image_row  = counts_8667_mid$imagerow
+colData(spe_8667_mid)$image_col  = counts_8667_mid$imagecol
+```
+
+
+```{r plot spots, echo=FALSE ,message= FALSE}
+p1 <- plotSpots(spe_6471_mid,
+  x_coord = "pxl_row_in_fullres",
+  y_coord = "pxl_col_in_fullres") + ggtitle("6471")
+
+p2 <- plotSpots(spe_6522_mid,
+  x_coord = "pxl_row_in_fullres",
+  y_coord = "pxl_col_in_fullres") + ggtitle(" 6522")
+
+p3 <- plotSpots(spe_8325_mid,
+  x_coord = "pxl_row_in_fullres",
+  y_coord = "pxl_col_in_fullres") + ggtitle(" 8325")
+
+p4 <- plotSpots(spe_8667_mid,
+  x_coord = "pxl_row_in_fullres",
+  y_coord = "pxl_col_in_fullres") + ggtitle(" 8667")
+
+
+
+grid.arrange(p1, p2, p3, p4, nrow = 2, heights=c(3,3))
+
+```
+
+```{r keep only spots over tissue, echo=FALSE, message=FALSE}
+spe_6471_mid <- spe_6471_mid[, spatialData(spe_6471_mid)$in_tissue == 1]
+message( 'Br6471 ', dim(spe_6471_mid)[1], ' ', dim(spe_6471_mid)[2] )
+
+spe_6522_mid <- spe_6522_mid[, spatialData(spe_6522_mid)$in_tissue == 1]
+message('Br6522 ', dim(spe_6522_mid)[1], ' ', dim(spe_6522_mid)[2])
+
+spe_8325_mid <- spe_8325_mid[, spatialData(spe_8325_mid)$in_tissue == 1]
+message('Br8325 ', dim(spe_8325_mid)[1], ' ', dim(spe_8325_mid)[2] )
+
+spe_8667_mid <- spe_8667_mid[, spatialData(spe_8667_mid)$in_tissue == 1]
+message('Br8667 ', dim(spe_8667_mid)[1], ' ',dim(spe_8667_mid)[2])
+
+```
+```{r identify mitochondrial genes, echo=FALSE, message = FALSE}
+is_mito_6471 <- grepl("(^MT-)|(^mt-)", rowData(spe_6471_mid)$symbol)
+table(is_mito_6471)
+
+is_mito_6522 <- grepl("(^MT-)|(^mt-)", rowData(spe_6522_mid)$symbol)
+table(is_mito_6522)
+
+is_mito_8325 <- grepl("(^MT-)|(^mt-)", rowData(spe_8325_mid)$symbol)
+table(is_mito_8325)
+
+is_mito_8667 <- grepl("(^MT-)|(^mt-)", rowData(spe_8667_mid)$symbol)
+table(is_mito_8667)
+
+```
+
+```{r list MT genes, echo = FALSE, message = FALSE}
+
+rowData(spe_6471_mid)$symbol[is_mito_6471]
+
+rowData(spe_6522_mid)$symbol[is_mito_6522]
+
+rowData(spe_8325_mid)$symbol[is_mito_8325]
+
+rowData(spe_8667_mid)$symbol[is_mito_8667]
+```
+```{r calculate per-spot QC metrics and store in colData, echo = FALSE, message = FALSE}
+
+spe_6471_mid <- addPerCellQC(spe_6471_mid, subsets = list(mito = is_mito_6471))
+spe_6522_mid <- addPerCellQC(spe_6522_mid, subsets = list(mito = is_mito_6522))
+spe_8325_mid <- addPerCellQC(spe_8325_mid, subsets = list(mito = is_mito_8325))
+spe_8667_mid <- addPerCellQC(spe_8667_mid, subsets = list(mito = is_mito_8667))
+
+```
+
+
+
+```{r unique genes expressed, echo = FALSE, message= FALSE}
+
+
+p1 <- ggplot( as_tibble(colData(spe_6471_mid)), aes(x = detected))+ geom_histogram(color="black", fill="white", aes(y=..density..))+
+  geom_density(aes(x=detected,y=..density..))+
+  annotate("text", x = 6000,y = 0.0001, label = "6471") 
+
+p2 <- ggplot( as_tibble(colData(spe_6522_mid)), aes(x = detected))+ geom_histogram(color="black", fill="white", aes(y=..density..))+
+  geom_density(aes(x=detected,y=..density..))+
+  annotate("text", x = 6000, y = 0.0001, label = "6522")
+
+p3 <- ggplot( as_tibble(colData(spe_8325_mid)), aes(x = detected))+ geom_histogram(color="black", fill="white", aes(y=..density..))+
+  geom_density(aes(x=detected,y=..density..))+
+  annotate("text", x = 6000, y = 0.0001, label = "8325")
+
+p4 <- ggplot( as_tibble(colData(spe_8667_mid)), aes(x = detected))+ geom_histogram(color="black", fill="white", aes(y=..density..))+
+  geom_density(aes(x=detected,y=..density..))+
+  annotate("text", x = 6000, y = 0.0001, label = "8667")
+
+title = ggdraw()+ draw_label(" Unique genes expressed",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+
+```
+
+```{r subset mito percent, echo = FALSE, message= FALSE}
+
+p1 <- ggplot( as_tibble(colData(spe_6471_mid)), aes(x = subsets_mito_percent))+ geom_histogram(color="black", fill="white", aes(y=..density..))+ geom_density(aes(x=subsets_mito_percent,y=..density..))+annotate("text", x = 25, y = 0.06, label = "6471") 
+  
+
+p2 <- ggplot( as_tibble(colData(spe_6522_mid)), aes(x = subsets_mito_percent))+ geom_histogram(color="black", fill="white",aes(y=..density..))+ geom_density(aes(x=subsets_mito_percent,y=..density..))+
+  annotate("text", x = 25, y = 0.06, label = " 6522")
+ 
+
+p3 <- ggplot( as_tibble(colData(spe_8325_mid)), aes(x = subsets_mito_percent))+ geom_histogram(color="black", fill="white",  aes(y=..density..))+geom_density(aes(x=subsets_mito_percent,y=..density..))+
+  annotate("text", x = 25, y = 0.06, label = "8325")
+ 
+
+p4 <- ggplot( as_tibble(colData(spe_8667_mid)), aes(x = subsets_mito_percent))+ geom_histogram(color="black", fill="white",  aes(y=..density..))+geom_density(aes(x=subsets_mito_percent,y=..density..))+
+  annotate("text", x = 25, y = 0.06, label = "8667")
+  
+
+title = ggdraw()+ draw_label(" Mito percent",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+```
+```{r detected vs. total genes correlation, echo = FALSE, message = FALSE}
+
+p1 <- plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "detected")+
+  ggtitle("") + annotate("text", x = 2500, y = 4000, label = "6471")
+
+p2 <- plotQC(spe_6522_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "detected")+
+  ggtitle("") + annotate("text", x = 2500, y = 4000, label = "6522")
+
+p3 <- plotQC(spe_8325_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "detected")+
+  ggtitle("") + annotate("text", x = 2500, y = 4000, label = "8325")
+
+p4 <- plotQC(spe_8667_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "detected")+
+  ggtitle("") + annotate("text", x =2500, y = 4000, label = "8667")
+
+title = ggdraw()+ draw_label(" Sum vs detected correlation",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+```
+
+```{r cell counts histogram, echo = FALSE, message= FALSE}
+
+tibble_6471 = as_tibble(colData(spe_6471_mid))
+tibble_6522 = as_tibble(colData(spe_6522_mid))
+tibble_8325 = as_tibble(colData(spe_8325_mid))
+tibble_8667 = as_tibble(colData(spe_8667_mid))
+
+
+
+p1 <- ggplot( tibble_6471, aes(x = cell_counts))+ geom_histogram(color="black", fill="white", binwidth = 5, aes(y = ..density..))+ geom_density(aes(x= cell_counts,y=..density..), color = "blue")+ annotate("text", x = 100, y = 0.05, label = "6471")
+  
+
+p2 <- ggplot( tibble_6522, aes(x = cell_counts))+ geom_histogram(color="black", fill="white", binwidth = 5, aes(y = ..density..))+ geom_density(aes(x= cell_counts,y=..density..), color = "blue") + annotate("text", x = 100, y = 0.05, label = " 6522")
+ 
+
+p3 <- ggplot( tibble_8325, aes(x = cell_counts))+ geom_histogram(color="black", fill="white",  binwidth = 5, aes(y = ..density..))+ geom_density(aes(x= cell_counts,y=..density..), color = "blue")+
+  annotate("text", x = 100, y = 0.05, label = "8325")
+ 
+
+p4 <- ggplot( tibble_8667, aes(x = cell_counts))+ geom_histogram(color="black", fill="white",  binwidth = 5, aes(y = ..density..))+ geom_density(aes(x= cell_counts,y=..density..), color = "blue")+
+  annotate("text", x = 100, y = 0.05, label = "8667")
+
+title = ggdraw()+ draw_label(" Spot cell count frequency",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+  
+```
+```{r num expressed genes vs. thresholded num cells, echo = FALSE, message= FALSE}
+
+p1 <- plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected")+
+  ggtitle("") 
+
+p2 <- plotQC(spe_6522_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected")+
+  ggtitle("") 
+
+p3 <- plotQC(spe_8325_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected")+
+  ggtitle("") 
+
+p4 <- plotQC(spe_8667_mid, type = "scatter", 
+       metric_x = "cell_counts", metric_y = "detected")+
+  ggtitle("") 
+
+title = ggdraw()+ draw_label(" Num cells vs. unique genes",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+```
+high cell counts vs low expressed genes = failed spots
+
+```{r mito sum vs total gene sum, echo=FALSE, message=FALSE}
+
+p1 <- plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "subsets_mito_sum")+ ggtitle("")
+
+p2 <- plotQC(spe_6522_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "subsets_mito_sum")+ ggtitle("")
+
+p3 <- plotQC(spe_8325_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "subsets_mito_sum")+ ggtitle("")
+
+p4  <- plotQC(spe_8667_mid, type = "scatter", 
+       metric_x = "sum", metric_y = "subsets_mito_sum")+ ggtitle("")
+
+title = ggdraw()+ draw_label(" Mito sum vs. total gene sum ",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+
+```
+
+```{r plot mito vs sum, echo = FALSE,  message=FALSE}
+
+p1 <- plotQC(spe_6471_mid, type = "scatter", 
+       metric_x = "detected", metric_y = "subsets_mito_percent") + ggtitle("")+ annotate("text", x = 4000, y = 30, label = "6471")
+p2 <- plotQC(spe_6522_mid, type = "scatter", 
+       metric_x = "detected", metric_y = "subsets_mito_percent")+ ggtitle("")+ annotate("text", x = 4000, y = 30, label = "6522")
+p3 <- plotQC(spe_8325_mid, type = "scatter", 
+       metric_x = "detected", metric_y = "subsets_mito_percent")+ ggtitle("")+ annotate("text", x = 4000, y = 30, label = "8325")
+p4 <- plotQC(spe_8667_mid, type = "scatter", 
+       metric_x = "detected", metric_y = "subsets_mito_percent")+ ggtitle("")+ annotate("text", x = 4000, y = 30, label = "8667")
+
+title = ggdraw()+ draw_label(" Mito percentage vs. total num unique genes ",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+
+
+```
+
+
+```{r calculate qclus, echo=FALSE, message=FALSE}
+set.seed(123)
+qclus_6471 <- quickCluster(spe_6471_mid)
+table(qclus_6471)
+qclus_6522 <- quickCluster(spe_6522_mid)
+table(qclus_6522)
+qclus_8325 <- quickCluster(spe_8325_mid)
+table(qclus_8325)
+qclus_8667 <- quickCluster(spe_8667_mid)
+table(qclus_8667)
+
+spe_6471_mid <- computeSumFactors(spe_6471_mid, cluster = qclus_6471)
+summary(sizeFactors(spe_6471_mid))
+spe_6522_mid <- computeSumFactors(spe_6522_mid, cluster = qclus_6522)
+summary(sizeFactors(spe_6522_mid))
+spe_8325_mid <- computeSumFactors(spe_8325_mid, cluster = qclus_8325)
+summary(sizeFactors(spe_8325_mid))
+spe_8667_mid <- computeSumFactors(spe_8667_mid, cluster = qclus_8667)
+summary(sizeFactors(spe_8667_mid))
+
+```
+
+```{r size factor histogram, echo=FALSE, message=FALSE}
+
+p1 <- ggplot( as_tibble(colData(spe_6471_mid)), aes(x = sizeFactor))+ geom_histogram(color="black", fill="white", binwidth = 0.20, aes(y = ..density..))+ geom_density(aes(x= sizeFactor,y=..density..), color = "blue")+ annotate("text", x = 6, y = 0.05, label = "6471")
+
+p2 <-  ggplot( as_tibble(colData(spe_6522_mid)), aes(x = sizeFactor))+ geom_histogram(color="black", fill="white", binwidth = 0.20, aes(y = ..density..))+ geom_density(aes(x= sizeFactor,y=..density..), color = "blue")+ annotate("text", x = 6, y = 0.05, label = "6522")
+
+p3 <-  ggplot( as_tibble(colData(spe_8325_mid)), aes(x = sizeFactor))+ geom_histogram(color="black", fill="white", binwidth = 0.20, aes(y = ..density..))+ geom_density(aes(x= sizeFactor,y=..density..), color = "blue")+ annotate("text", x = 6, y = 0.05, label = "8325")
+
+p4<-  ggplot( as_tibble(colData(spe_8667_mid)), aes(x = sizeFactor))+ geom_histogram(color="black", fill="white", binwidth = 0.20, aes(y = ..density..))+ geom_density(aes(x= sizeFactor,y=..density..), color = "blue")+ annotate("text", x = 6, y = 0.05, label = "8667")
+
+
+title = ggdraw()+ draw_label(" Size factors ",fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+plot_row = plot_grid(p1, p2, p3, p4)
+plot_grid(title, plot_row, ncol = 1, rel_heights = c(0.1, 1))
+
+```
