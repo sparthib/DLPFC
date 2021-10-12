@@ -1,0 +1,90 @@
+---
+title: "Quantile Normalization"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include = FALSE }
+library("here")
+library("sessioninfo")
+library("pryr")
+## reading the data
+library("SpatialExperiment")
+## vis
+library("spatialLIBD")
+## analysis ## requires uwot for UMAP
+library("scater")
+library("BiocParallel")
+library('ggspavis')
+library('cowplot')
+library('gridExtra')
+library('tidyverse')
+library('scran')
+library('preprocessCore')
+library(reshape)
+```
+
+
+
+```{r build spe}
+dir6471 <- 'D:/DLPFC images/6471 mid'
+samples <- file.path(dir6471)
+sample_ids = 'Br6471_mid_manual_allignment_all'
+spe_6471_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+```
+
+```{r viz counts matrix}
+head(counts(spe_6471_mid))
+
+```
+
+
+```{r convert sparse matrix to dense}
+
+dense_counts_6471 = as.matrix(counts(spe_6471_mid))
+```
+
+```{r convert dense matrix to dataframe}
+counts_df_6471 <- as.data.frame(dense_counts_6471)
+head(counts_df_6471)
+```
+
+
+
+```{r quantile normalize }
+norm_6471 <- normalize.quantiles(t(dense_counts_6471), copy = TRUE)
+```
+
+```{r show norm matrix}
+norm_df_6471 <- as.data.frame(norm_6471)
+
+colnames(norm_df_6471) = rownames(counts_df_6471)
+rownames(norm_df_6471) = colnames(counts_df_6471)
+head(norm_df_6471)
+```
+
+```{r add normalized ver to assay slot}
+assay(spe_6471_mid, "qnorm_counts") = t(as.matrix(norm_df_6471))
+```
+
+```{r Quantile Norm plot for first five }
+
+data_norm_long <- melt(norm_df_6471[1:5])
+
+p <- ggplot(data_norm_long, aes(factor(variable), value)) 
+p + geom_boxplot() + facet_wrap(~variable, scale="free")
+
+````
+#```{r UMAP on normCounts}
+#u <- uwot::umap(qnorm_counts(spe_6471_mid), n_neighbors = 2)
+
+#reducedDim(spe_6471_mid, "UMAP_uwot") <- u
+#reducedDims(spe_6471_mid)
+
+#```
