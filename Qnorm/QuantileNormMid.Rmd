@@ -1,0 +1,151 @@
+---
+title: "Quantile Normalization"
+output:
+html_document:
+df_print: paged
+---
+
+```{r setup, include = FALSE }
+library("here")
+library("sessioninfo")
+library("pryr")
+## reading the data
+library("SpatialExperiment")
+## vis
+library("spatialLIBD")
+## analysis ## requires uwot for UMAP
+library("scater")
+library("BiocParallel")
+library('ggspavis')
+library('cowplot')
+library('gridExtra')
+library('tidyverse')
+library('scran')
+library('preprocessCore')
+library(reshape)
+```
+
+
+
+```{r build spe}
+dir6471 <- 'D:/DLPFC images/6471 mid'
+samples <- file.path(dir6471)
+sample_ids = 'Br6471_mid_manual_allignment_all'
+spe_6471_mid <- read10xVisium(samples, sample_ids,
+  type = "sparse",
+  data = "raw",
+  images = c("lowres", "hires", "fullres", "detected", "aligned"),
+  load = TRUE
+)
+```
+
+```{r viz counts matrix, include= FALSE}
+head(counts(spe_6471_mid))
+
+```
+
+
+```{r convert sparse matrix to dense}
+
+dense_counts_6471 = as.matrix(counts(spe_6471_mid))
+```
+
+```{r prenorm df}
+counts_6471_df = as.data.frame(dense_counts_6471)
+```
+
+```{r head df, include = FALSE}
+head(counts_6471_df)
+```
+
+
+```{r quantile normalize}
+norm_6471 <- normalize.quantiles((dense_counts_6471), copy = TRUE)
+```
+
+
+
+```{r show norm matrix}
+norm_df_6471 <- as.data.frame(norm_6471)
+
+rownames(norm_df_6471) = rownames(dense_counts_6471)
+colnames(norm_df_6471) = colnames(dense_counts_6471)
+#head(norm_df_6471)
+```
+
+```{r add normalized ver to assay slot}
+assay(spe_6471_mid, "qnorm_counts") = as.matrix(norm_df_6471)
+```
+
+
+```{r }
+data_prenorm_long <- melt(counts_6471_df[10:15])
+p <- ggplot(data_prenorm_long, aes(factor(variable), value)) 
+p + geom_boxplot(outlier.size=0.01) + facet_wrap(~variable, scale="free")+
+  geom_jitter(size = 0.0001, color = 'blue') + 
+  ggtitle('Pre quantile norm')+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+
+```
+
+
+```{r Quantile Norm plot for first five }
+
+data_norm_long <- melt(norm_df_6471[10:15])
+
+p <- ggplot(data_norm_long, aes(factor(variable), value)) 
+p + geom_boxplot(outlier.size=0.01) + facet_wrap(~variable, scale="free")+
+  geom_jitter(size = 0.0001, color = 'blue') + ggtitle('With q normalization')+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+
+```
+
+
+
+```{r add 6471 spot info, echo = FALSE, message = FALSE, results='hide'}
+counts_6471_mid = read.csv('D:/DLPFC images/6471 mid/spatial/tissue_spot_counts.csv')
+
+#colData_6471_mid = read.csv('D:/DLPFC images/6471 mid/colData6471mid.csv')
+
+#merge(counts_6471_mid, colData_6471_mid, by = "barcode")
+
+colData(spe_6471_mid)$cell_counts = counts_6471_mid$count
+colData(spe_6471_mid)$image_row  = counts_6471_mid$imagerow
+colData(spe_6471_mid)$image_col  = counts_6471_mid$imagecol
+
+```
+
+```{r column pre norm sum }
+prenorm_sums = counts_6471_df |> summarise(across(everything(), ~ sum(., is.na(.), 0)))
+```
+
+```{r piv prenorm}
+colData(spe_6471_mid)$prenorm_spot_sum = pivot_longer(prenorm_sums, everything())$value
+```
+
+```{r hist norm}
+hist(colData(spe_6471_mid)$prenorm_spot_sum, breaks = 20)
+```
+
+
+
+
+
+```{r column sum }
+norm_spot_sums = norm_df_6471 |> summarise(across(everything(), ~ sum(., is.na(.), 0)))
+```
+
+```{r pivot norm }
+colData(spe_6471_mid)$norm_spot_sum = pivot_longer(norm_spot_sums, everything())$value
+```
+
+```{r hist qnorm}
+hist(colData(spe_6471_mid)$norm_spot_sum, breaks = 20)
+```
+
+
